@@ -6,22 +6,25 @@ import com.google.cloud.pubsub.v1.stub.SubscriberStub;
 import com.google.cloud.pubsub.v1.stub.SubscriberStubSettings;
 import com.google.pubsub.v1.*;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class PubSubSubscriber extends Thread {
 
     private final String projectId;
     private final String subscriptionId;
 
+    private Map<String, AtomicInteger> hitCountMap;
+
     private Datastore datastore = DatastoreOptions.getDefaultInstance().getService();
     private KeyFactory keyFactory = datastore.newKeyFactory().setKind("Users");
 
-    public PubSubSubscriber(String projectId, String subscriptionId) {
+    public PubSubSubscriber(String projectId, String subscriptionId,  Map<String, AtomicInteger> hitCountMap) {
         this.projectId = projectId;
         this.subscriptionId = subscriptionId;
+        this.hitCountMap = hitCountMap;
     }
 
     @Override
@@ -45,6 +48,16 @@ public class PubSubSubscriber extends Thread {
                         for (ReceivedMessage message : pullResponse.getReceivedMessagesList()) {
                             PubsubMessage pubsubMessage = message.getMessage();
                             Map<String, String> attributeMap = pubsubMessage.getAttributesMap();
+
+                            String productId = attributeMap.get("productId");
+                            synchronized (hitCountMap) {
+                                AtomicInteger hitCount = hitCountMap.get(productId);
+                                if (hitCount == null) {
+                                    hitCount = new AtomicInteger(0);
+                                    hitCountMap.put(productId, hitCount);
+                                }
+                                hitCount.incrementAndGet();
+                            }
 
                             try {
                                 IncompleteKey key = keyFactory.newKey();
